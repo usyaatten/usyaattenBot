@@ -19,7 +19,6 @@ age1 = 0
 tg_id1 = 0
 result = 0
 an = ''
-b = 12
 
 
 @bot.message_handler(content_types=['text'])
