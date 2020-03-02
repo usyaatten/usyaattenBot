@@ -1,5 +1,4 @@
 import telebot
-from telebot import types
 import psycopg2
 import psycopg2.extras
 
@@ -8,93 +7,63 @@ bot = telebot.TeleBot(TOKEN)
 
 conn = psycopg2.connect (
     host = "localhost",
-    database = "postgres",
+    database = "Users",
     user = "postgres",
     password = "1235675")
 cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-name1 = ''
-surname1 = ''
-age1 = 0
-tg_id1 = 0
-result = 0
-an = ''
 
+user_data = {}
+
+class User:
+    def __init__(self, first_name):
+        self.first_name = first_name
+        self.last_name = ''
+        self.age = 0
+
+
+@bot.message_handler(commands=['start', 'help'])
+def handle_start(message):
+    user_markup = telebot.types.ReplyKeyboardMarkup(True, True) # второе тру - чтобы клава убралась нахуй
+    user_markup.row('Создать анкету', 'Искать анкеты')
+    bot.send_message(message.from_user.id, 'Че хочешь', reply_markup=user_markup)
+    #msg = bot.send_message(message.chat.id, 'Введите имя')
+    #bot.register_next_step_handler(msg, process_firstname_step)
 
 @bot.message_handler(content_types=['text'])
+def handle_text(message):
+    if message.text == 'Создать анкету':
+        msg = bot.send_message(message.chat.id, 'Введите имя')
+        bot.register_next_step_handler(msg, process_firstname_step)
+    elif message.text == 'Искать анкеты':
+        bot.send_message(message.from_user.id, 'Введи параметры поиска/ФУНКЦИОНАЛ ЕЩЕ НЕ РЕАЛИЗОВАН')
 
-def start(message):
-    global tg_id1
-    global result
-    global an
-    tg_id1 = message.chat.id
+def process_firstname_step(message):
+    try:
+        user_id = message.from_user.id
+        user_data[user_id] = User(message.text)
 
-    if message.text == '/reg':
-        sql = "SELECT EXISTS (SELECT * FROM users_tg_bot WHERE tg_id = %s)" #SELECT EXISTS (
-        var = (tg_id1,)
-        cur.execute(sql, var)
-        result = cur.fetchall()
-        print(result)
+        msg = bot.send_message(message.chat.id, "Введите фамилию") #в ПЕРЕМЕННУЮ MSG ЗАПИСЫВАЕТСЯ ФАМИЛИЯ ПОЛЬЗОВАТЕЛЯ
+        bot.register_next_step_handler(msg, process_lastname_step)
+    except Exception as e:
+        bot.reply_to(message, 'Все хуево')
 
-        if result[0][0] == 0:
-            bot.send_message(message.from_user.id, "Как тебя зовут?")
-            bot.register_next_step_handler(message, get_name)
-        else:
-            bot.send_message(message.from_user.id, "Вы уже зарегестрированы!")
+def process_lastname_step(message):
+    try:
+        user_id = message.from_user.id
+        user = user_data[user_id]
+        user.last_name = message.text
 
-    elif message.text == "/show":
-        cur.execute('''SELECT * FROM users_tg_bot
-                    ORDER BY RANDOM()
-                    LIMIT 1''')
-        an = cur.fetchall()
-        bot.send_message(message.from_user.id, text = an)
-        print(*an)
+        sql = "INSERT INTO Persons (user_id, firstname, lastname) VALUES (%s, %s, %s)"
+        val = (user_id, user.first_name, user.last_name)
+        cur.execute(sql, val)
+        conn.commit()
 
-    else:
-        bot.send_message(message.from_user.id, 'Напиши /reg')
+        bot.send_message(message.chat.id, "Вы успешно зарегестрированы")
 
-def get_name(message):
-    global name1
-    name1 = message.text
-    bot.send_message(message.from_user.id, "Какая у тебя фамилия?")
-    bot.register_next_step_handler(message, get_surname)
-
-def get_surname(message):
-    global surname1
-    surname1 = message.text
-    bot.send_message(message.from_user.id, "Сколько тебе лет?")
-    bot.register_next_step_handler(message, get_age)
-
-def insert_to_db(name, surname, age):
-    sql = ("INSERT INTO USERS_TG_BOT (NAME, SURNAME, AGE, TG_ID) VALUES (%s, %s, %s, %s)")
-    val = (name, surname, age, tg_id1)
-    cur.execute(sql, val)
-    conn.commit()
-
-def get_age(message):
-    global age1
-    while age1 == 0:
-        try:
-            age1 = int(message.text)
-        except Exception:
-            bot.send_message(message.from_user.id, "Напиши возраст корректно, мудила")
-    keyboard = types.InlineKeyboardMarkup() #клавиатура????
-    key_yes = types.InlineKeyboardButton(text='Да', callback_data='yes')  # кнопка «Да»
-    keyboard.add(key_yes)  # добавляем кнопку в клавиатуру
-    key_no = types.InlineKeyboardButton(text='Нет', callback_data='no')
-    keyboard.add(key_no)
-    question = 'Тебе ' + str(age1) + ' лет, тебя зовут ' + name1 + ' ' + surname1 + '?'
-    bot.send_message(message.from_user.id, text = question, reply_markup=keyboard)
-
-    insert_to_db(name1, surname1, age1)
-
-
-@bot.callback_query_handler(func=lambda call: True)
-def callback_worker(call):
-    if call.data == "yes":
-        bot.send_message(call.message.chat.id, 'Запомню : )')
-    elif call.data == "no":
-        bot.send_message(call.message.chat.id, "Пошел нахуй, наебщик")
+    except Exception as e:
+        bot.reply_to(message, 'Ошибка, или вы уже зарегестрированны')
 
 bot.polling()
+
 
